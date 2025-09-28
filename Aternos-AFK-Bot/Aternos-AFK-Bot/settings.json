@@ -1,0 +1,55 @@
+{
+  "bot-account": {
+    "username": "AFKBot",
+    "password": "",
+    "type": "mojang"
+  },
+
+  "server": {
+    "ip": "AaravPro19803.aternos.me",
+    "port": 13172,
+    "version": "1.12.1"
+  },
+
+  "position": {
+    "enabled": true,
+    "x": 0.3,
+    "y": 0,
+    "z": -0.3
+  },
+
+  "utils": {
+    "auto-auth": {
+      "enabled": false,
+      "password": ""
+    },
+
+    "anti-afk": {
+      "enabled": true,
+      "sneak": true,
+      "jump": true,
+      "rotate": true
+    },
+
+    "chat-messages": {
+      "enabled": true,
+      "repeat": true,
+      "repeat-delay": 60,
+      "messages": [
+        "Just mining...",
+        "Lag spike?",
+        "Anyone got diamonds?",
+        "Subscribe to Slobos!",
+        "Still active 👀",
+        "Exploring the terrain...",
+        "Crafting something cool soon.",
+        "Pulse Guardian reporting in."
+      ]
+    },
+
+    "chat-log": true,
+    "auto-reconnect": true,
+    "auto-reconnect-delay": 5000,
+    "status-endpoint": "/status.json"
+  }
+}
