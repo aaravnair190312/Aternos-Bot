@@ -1,16 +1,18 @@
 {
-  "name": "Minecraft Afk Bot",
-  "version": "2.1",
-  "description": "Afk bot for minecraft servers.",
+  "name": "minecraft-afk-bot",
+  "version": "2.1.0",
+  "description": "AFK bot for Minecraft servers.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "author": "Lamgerr",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.1",
-    "mineflayer": "^4.3.0",
-    "mineflayer-pathfinder": "^2.1.1"
+    "express": "^4.18.2",
+    "mineflayer": "^4.15.0",
+    "mineflayer-pathfinder": "^2.4.1",
+    "minecraft-data": "^3.30.0"
   }
 }
+
