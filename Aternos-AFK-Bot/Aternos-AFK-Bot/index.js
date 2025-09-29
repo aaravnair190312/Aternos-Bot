@@ -1,9 +1,9 @@
-
+// index.js — Pulse Guardian v6.6 Continuous Random Movement + Head Rotation
 
 require('events').defaultMaxListeners = 30;
 
 const mineflayer = require('mineflayer');
-const { pathfinder, Movements } = require('mineflayer-pathfinder');
+const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 const mcData = require('minecraft-data');
 const express = require('express');
 const fs = require('fs');
@@ -13,7 +13,7 @@ const config = {
   "bot-account": {
     username: process.env.BOT_USER,
     password: process.env.BOT_PASS || "",
-    type: process.env.BOT_AUTH || "offline" // "offline" for cracked, "mojang"/"microsoft" for premium
+    type: process.env.BOT_AUTH || "offline"
   },
   server: {
     ip: process.env.MC_HOST || "localhost",
@@ -21,21 +21,16 @@ const config = {
     version: process.env.MC_VERSION
   },
   utils: {
-    "anti-afk": { enabled: process.env.ANTI_AFK === "true", sneak: true, jump: true, rotate: true },
+    "anti-afk": process.env.ANTI_AFK === "true",
     "chat-messages": {
       enabled: process.env.CHAT_MESSAGES === "true",
-      repeat: true,
       "repeat-delay": parseInt(process.env.CHAT_REPEAT_DELAY || "60", 10),
       messages: (process.env.CHAT_MESSAGES_LIST || "").split(",").map(s => s.trim()).filter(Boolean)
     },
     "chat-log": process.env.CHAT_LOG !== "false",
     "auto-reconnect": process.env.AUTO_RECONNECT !== "false",
     "auto-reconnect-delay": parseInt(process.env.RECONNECT_DELAY || "10000", 10),
-    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json",
-    "pos-enabled": process.env.POS_ENABLED === "true",
-    "pos-x": parseFloat(process.env.POS_X || "0"),
-    "pos-y": parseFloat(process.env.POS_Y || "0"),
-    "pos-z": parseFloat(process.env.POS_Z || "0")
+    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json"
   }
 };
 
@@ -91,27 +86,26 @@ function createBot() {
   const mcVersion = mcData(bot.version);
   const defaultMove = new Movements(bot, mcVersion);
 
-  // Anti‑AFK
-  function simulateHumanPresence() {
-    if (!config.utils["anti-afk"].enabled) return;
-    try {
-      if (config.utils["anti-afk"].jump) {
-        bot.setControlState('jump', true);
-        setTimeout(() => bot.setControlState('jump', false), 300);
-      }
-      if (config.utils["anti-afk"].sneak) {
-        bot.setControlState('sneak', true);
-        setTimeout(() => bot.setControlState('sneak', false), 1000);
-      }
-      if (config.utils["anti-afk"].rotate) {
-        const yaw = Math.random() * Math.PI * 2;
-        const pitch = (Math.random() - 0.5) * Math.PI;
-        bot.look(yaw, pitch, true).catch(() => {});
-      }
-    } catch (err) {
-      logArtifact('Anti-AFK Error', err.message);
-    }
-    setTimeout(simulateHumanPresence, Math.random()*15000 + 10000);
+  // Continuous random movement + head rotation
+  function wander() {
+    if (!bot.entity.position) return;
+    const base = bot.entity.position;
+    const dx = (Math.random() - 0.5) * 10;
+    const dz = (Math.random() - 0.5) * 10;
+    const x = Math.floor(base.x + dx);
+    const y = Math.floor(base.y);
+    const z = Math.floor(base.z + dz);
+
+    bot.pathfinder.setMovements(defaultMove);
+    bot.pathfinder.setGoal(new GoalNear(x, y, z, 1));
+
+    const yaw = Math.random() * Math.PI * 2;
+    const pitch = (Math.random() - 0.5) * 0.5;
+    bot.look(yaw, pitch, true).catch(() => {});
+
+    logArtifact('Wander', `Moving to (${x},${y},${z}) with head yaw=${yaw.toFixed(2)}, pitch=${pitch.toFixed(2)}`);
+
+    setTimeout(wander, 15000 + Math.random()*10000);
   }
 
   // Chat mimic
@@ -131,7 +125,6 @@ function createBot() {
     setTimeout(mimicChat, Math.random()*delayMs + delayMs);
   }
 
-  // Event hooks
   bot.once('spawn', () => {
     botStatus = {
       ...botStatus,
@@ -141,19 +134,8 @@ function createBot() {
       version: bot.version,
       statusText: `Pulse Guardian v6.${resurrectionCount} active ✅`
     };
-    simulateHumanPresence();
+    wander();
     if (config.utils['chat-messages'].enabled) mimicChat();
-
-    if (config.utils["pos-enabled"]) {
-      const goal = new mineflayer.pathfinder.goals.GoalBlock(
-        config.utils["pos-x"],
-        config.utils["pos-y"],
-        config.utils["pos-z"]
-      );
-      bot.pathfinder.setMovements(defaultMove);
-      bot.pathfinder.setGoal(goal);
-    }
-
     setInterval(() => {
       botStatus.lastSeen = new Date().toISOString();
       botStatus.position = bot.entity.position;
@@ -173,7 +155,6 @@ function createBot() {
     }
     lastDisconnectTime = now;
     const jitter = Math.floor(Math.random() * 5000);
-    logArtifact('Reconnect', `Respawning in ${delay + jitter}ms`);
     setTimeout(createBot, delay + jitter);
   });
 
@@ -204,5 +185,3 @@ process.on('unhandledRejection', reason => {
   logArtifact('Unhandled Rejection', reason?.stack || reason);
   setTimeout(createBot, baseReconnectDelay);
 });
-
-
