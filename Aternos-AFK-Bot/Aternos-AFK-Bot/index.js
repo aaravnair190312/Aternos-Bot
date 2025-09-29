@@ -1,4 +1,4 @@
-// index.js — Pulse Guardian v6.7 Continuous Random Movement + Head Rotation
+// index.js — Pulse Guardian v6.7.2 “The Patient Sentinel”
 
 require('events').defaultMaxListeners = 30;
 
@@ -37,7 +37,9 @@ const PORT = process.env.PORT || 5000;
 
 let resurrectionCount = 0;
 let lastDisconnectTime = 0;
+let lastReconnect = 0;
 const baseReconnectDelay = config.utils["auto-reconnect-delay"];
+const MIN_RECONNECT_DELAY = 30000; // 30s cooldown
 
 let botStatus = {
   online: false,
@@ -63,6 +65,17 @@ function logArtifact(event, detail) {
   try { fs.appendFileSync('pulse-artifacts.log', entry); } catch {}
 }
 
+function safeReconnect() {
+  const now = Date.now();
+  if (now - lastReconnect < MIN_RECONNECT_DELAY) {
+    logArtifact('Reconnect', 'Skipping reconnect to avoid spam storm');
+    return;
+  }
+  lastReconnect = now;
+  const jitter = Math.floor(Math.random() * 5000);
+  setTimeout(createBot, baseReconnectDelay + jitter);
+}
+
 function createBot() {
   resurrectionCount++;
   botStatus.resurrection = resurrectionCount;
@@ -82,7 +95,7 @@ function createBot() {
   const defaultMove = new Movements(bot, mcVersion);
 
   function wander() {
-    if (!bot.entity.position) return;
+    if (!bot.entity?.position) return;
     const base = bot.entity.position;
     const dx = (Math.random() - 0.5) * 8;
     const dz = (Math.random() - 0.5) * 8;
@@ -118,6 +131,26 @@ function createBot() {
     setTimeout(mimicChat, Math.random()*delayMs + delayMs);
   }
 
+  // === Hardened Guards ===
+  let lastPos = null;
+  setInterval(() => {
+    if (!bot.entity?.position) return;
+    const pos = bot.entity.position;
+    if (lastPos && pos.distanceTo(lastPos) < 1) {
+      logArtifact('Watchdog', 'Bot stuck, forcing wander() restart');
+      wander();
+    }
+    lastPos = pos;
+  }, 20000);
+
+  bot.on('goal_reached', () => logArtifact('Pathfinder', 'Goal reached'));
+  bot.on('path_update', (r) => {
+    if (r.status === 'noPath') {
+      logArtifact('Pathfinder', 'No path, retrying wander()');
+      wander();
+    }
+  });
+
   bot.once('spawn', () => {
     botStatus = {
       ...botStatus,
@@ -135,33 +168,30 @@ function createBot() {
     }, 30000);
   });
 
+  bot.on('respawn', () => {
+    logArtifact('Respawn', 'Bot respawned, restarting wander()');
+    wander();
+  });
+
   bot.on('end', () => {
     logArtifact('Disconnect', 'Bot session ended');
     botStatus.online = false;
     botStatus.statusText = `Pulse Guardian v6.${resurrectionCount} disconnected ❌`;
-    if (!config.utils["auto-reconnect"]) return;
-    const now = Date.now();
-    let delay = baseReconnectDelay;
-    if (lastDisconnectTime && now - lastDisconnectTime < 60000) {
-      delay *= 2;
-      logArtifact('Reconnect Throttle', `Delaying next spawn by ${delay}ms`);
-    }
-    lastDisconnectTime = now;
-    const jitter = Math.floor(Math.random() * 5000);
-    setTimeout(createBot, delay + jitter);
+    if (config.utils["auto-reconnect"]) safeReconnect();
   });
 
   bot.on('kicked', reason => {
     logArtifact('Kick', JSON.stringify(reason));
     botStatus.online = false;
     botStatus.statusText = `Pulse Guardian v6.${resurrectionCount} kicked ❌`;
+    if (config.utils["auto-reconnect"]) safeReconnect();
   });
 
   bot.on('error', err => {
     logArtifact('Error', err.stack || err.message);
     botStatus.online = false;
     botStatus.statusText = `Pulse Guardian v6.${resurrectionCount} error ❌`;
-    setTimeout(createBot, baseReconnectDelay);
+    if (config.utils["auto-reconnect"]) safeReconnect();
   });
 }
 
@@ -169,10 +199,11 @@ createBot();
 
 process.on('uncaughtException', err => {
   logArtifact('Uncaught Exception', err.stack || err.message);
-  setTimeout(createBot, baseReconnectDelay);
+  if (config.utils["auto-reconnect"]) safeReconnect();
 });
 
 process.on('unhandledRejection', reason => {
   logArtifact('Unhandled Rejection', reason?.stack || reason);
-  setTimeout(createBot, baseReconnectDelay);
+  if (config.utils["auto-reconnect"]) safeReconnect();
 });
+
