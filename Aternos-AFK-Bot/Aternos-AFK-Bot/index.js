@@ -11,7 +11,7 @@ const mcData    = require('minecraft-data');
 const express   = require('express');
 const fs        = require('fs');
 
-// ---------------- Env-only Config ----------------
+// ---------------- Env-only Config (no auto-auth) ----------------
 const config = {
   "bot-account": {
     username: process.env.BOT_USER,
@@ -30,10 +30,6 @@ const config = {
     z:       parseFloat(process.env.POS_Z) || 0
   },
   utils: {
-    "auto-auth": {
-      enabled:  process.env.AUTO_AUTH === "true",
-      password: process.env.AUTO_AUTH_PASS || ""
-    },
     "anti-afk": {
       enabled: process.env.ANTI_AFK === "true",
       sneak:   true,
@@ -41,13 +37,13 @@ const config = {
       rotate:  true
     },
     "chat-messages": {
-      enabled:       process.env.CHAT_MESSAGES === "true",
-      repeat:        true,
+      enabled:        process.env.CHAT_MESSAGES === "true",
+      repeat:         true,
       "repeat-delay": parseInt(process.env.CHAT_REPEAT_DELAY || "60", 10),
-      messages:      (process.env.CHAT_MESSAGES_LIST || "")
-                      .split(",")
-                      .map(s => s.trim())
-                      .filter(Boolean)
+      messages:       (process.env.CHAT_MESSAGES_LIST || "")
+                       .split(",")
+                       .map(s => s.trim())
+                       .filter(Boolean)
     },
     "chat-log":             process.env.CHAT_LOG !== "false",      // default true
     "auto-reconnect":       process.env.AUTO_RECONNECT !== "false",// default true
@@ -105,10 +101,11 @@ process.on('unhandledRejection', reason => {
 
 // ---------------- Helpers (replace deprecated mobType) ----------------
 function getMobType(entity) {
-  return entity.displayName || entity.name || 'unknown';
+  return entity?.displayName || entity?.name || 'unknown';
 }
 function isHostile(type) {
-  return ['zombie','skeleton','creeper','spider','enderman'].includes(String(type).toLowerCase());
+  return ['zombie','skeleton','creeper','spider','enderman']
+    .includes(String(type).toLowerCase());
 }
 
 // ---------------- Bot Factory & Reconnect Logic ----------------
@@ -164,7 +161,7 @@ function createBot() {
     }
   }, 30000);
 
-  // Socket errors with backoff (only ECONNRESET triggers exit here)
+  // Socket errors with backoff
   bot._client.on('error', err => {
     logArtifact('Socket Error', err.code || err.message);
     if (err.code === 'ECONNRESET') {
@@ -263,34 +260,6 @@ function createBot() {
     setTimeout(fleeFromHostiles, 3000);
   }
 
-  function antiAfkLoop() {
-    if (!config.utils["anti-afk"].enabled) return;
-    try {
-      // light periodic wiggle
-      const yaw   = Math.random() * Math.PI * 2;
-      const pitch = (Math.random() - 0.5) * Math.PI;
-      bot.look(yaw, pitch, true).catch(() => {});
-      bot.setControlState('left', true);
-      setTimeout(() => bot.setControlState('left', false), 400);
-      bot.setControlState('right', true);
-      setTimeout(() => bot.setControlState('right', false), 400);
-    } catch (err) {
-      logArtifact('Anti-AFK Loop Error', err.message);
-    }
-    setTimeout(antiAfkLoop, Math.random()*20000 + 15000);
-  }
-
-  // Ghostproof detection (optional hard exit to force fresh reconnect)
-  const ghostproofInterval = setInterval(() => {
-    if (Date.now() - lastRealActivity > 60000) {
-      logArtifact('Ghostproof Trigger', `v5.3.${resurrectionCount} – No activity detected`);
-      botStatus.online     = false;
-      botStatus.statusText = `Pulse Guardian v5.3.${resurrectionCount} ghostproof ❌`;
-      clearInterval(ghostproofInterval);
-      process.exit(1);
-    }
-  }, 30000);
-
   // ---------------- Event Hooks ----------------
   bot.once('spawn', () => {
     botStatus = {
@@ -302,19 +271,7 @@ function createBot() {
       statusText: `Pulse Guardian v5.3.${resurrectionCount} active ✅`
     };
 
-    // Auto-auth (register/login) if enabled
-    if (config.utils['auto-auth'].enabled) {
-      const pwd = config.utils['auto-auth'].password;
-      try {
-        bot.chat(`/register ${pwd} ${pwd}`);
-        bot.chat(`/login ${pwd}`);
-        logArtifact('Auto-Auth', 'Register/Login sent');
-      } catch (err) {
-        logArtifact('Auth Chat Error', err.message);
-      }
-    }
-
-    // Position init (optional)
+    // Optional position init
     if (config.position.enabled) {
       try {
         const { x,y,z } = config.position;
@@ -329,7 +286,6 @@ function createBot() {
     // Start routines
     continuousDrift();
     simulateHumanPresence();
-    antiAfkLoop();
     if (config.utils['chat-messages'].enabled) mimicChat();
     fleeFromHostiles();
 
