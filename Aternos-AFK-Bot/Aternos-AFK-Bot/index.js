@@ -6,16 +6,57 @@ const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-path
 const mcData = require('minecraft-data');
 const express = require('express');
 const fs = require('fs');
-const config = require('./settings.json');
 
+// ---------------- Env-only Config ----------------
+const config = {
+  "bot-account": {
+    username: process.env.BOT_USER,
+    password: process.env.BOT_PASS || "",
+    type: process.env.BOT_AUTH || "mojang"
+  },
+  server: {
+    ip: process.env.MC_HOST,
+    port: parseInt(process.env.MC_PORT, 10),
+    version: process.env.MC_VERSION
+  },
+  position: {
+    enabled: process.env.POS_ENABLED === "true",
+    x: parseFloat(process.env.POS_X) || 0,
+    y: parseFloat(process.env.POS_Y) || 0,
+    z: parseFloat(process.env.POS_Z) || 0
+  },
+  utils: {
+    "auto-auth": {
+      enabled: process.env.AUTO_AUTH === "true",
+      password: process.env.AUTO_AUTH_PASS || ""
+    },
+    "anti-afk": {
+      enabled: process.env.ANTI_AFK === "true",
+      sneak: true,
+      jump: true,
+      rotate: true
+    },
+    "chat-messages": {
+      enabled: process.env.CHAT_MESSAGES === "true",
+      repeat: true,
+      "repeat-delay": parseInt(process.env.CHAT_REPEAT_DELAY || "60", 10),
+      messages: (process.env.CHAT_MESSAGES_LIST || "").split(",").filter(Boolean)
+    },
+    "chat-log": process.env.CHAT_LOG !== "false", // default true
+    "auto-reconnect": process.env.AUTO_RECONNECT !== "false", // default true
+    "auto-reconnect-delay": parseInt(process.env.RECONNECT_DELAY || "10000", 10),
+    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json"
+  }
+};
+
+// ---------------- Express Heartbeat ----------------
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Throttle state trackers
 let resurrectionCount = 0;
 let lastDisconnectTime = 0;
 let lastExitTime = 0;
-const baseReconnectDelay = config.utils['auto-reconnect-delay'] || 10000;
+const baseReconnectDelay = config.utils['auto-reconnect-delay'];
 
 let botStatus = {
   online: false,
@@ -26,19 +67,14 @@ let botStatus = {
   statusText: 'Pulse Guardian offline ❌'
 };
 
-// -------------- Uptime & Webhook ----------------
-
 app.use(express.json());
 
 app.get('/', (req, res) =>
   res.status(200).send('🫀 Pulse Guardian is alive — uptime overlay active.')
 );
 
-app.head('/', (req, res) =>
-  res.sendStatus(200)
-);
+app.head('/', (req, res) => res.sendStatus(200));
 
-// Fallback GET endpoint for hosts that reject HEAD-only
 app.get('/ping', (req, res) =>
   res.status(200).send('Pulse Guardian ping response')
 );
@@ -47,18 +83,9 @@ app.get('/heartbeat', (req, res) =>
   res.status(botStatus.online ? 200 : 503).json(botStatus)
 );
 
-app.get('/status.json', (req, res) =>
+app.get(config.utils['status-endpoint'], (req, res) =>
   res.json(botStatus)
 );
-
-app.post('/ur-down', (req, res) => {
-  const { alertType, monitor } = req.body;
-  if (alertType === 'down') {
-    logArtifact('UR Alert', `Monitor "${monitor.friendlyName}" is DOWN — exiting for restart`);
-    process.exit(1);
-  }
-  res.sendStatus(200);
-});
 
 const server = app.listen(PORT, '0.0.0.0', () =>
   console.log(`📡 Uptime monitor listening on port ${PORT}`)
@@ -68,13 +95,12 @@ server.on('error', (err) => {
   logArtifact('HTTP Server Error', err.code || err.message);
 });
 
-// -------------- Artifact Logger & Crash Catchers ----------------
-
+// ---------------- Artifact Logger ----------------
 function logArtifact(event, detail) {
   const timestamp = new Date().toISOString();
   const entry = `[Pulse Guardian Artifact] ${timestamp} – ${event}: ${detail}\n`;
-  console.log(entry.trim());
-  fs.appendFileSync('pulse-artifacts.log', entry);
+  if (config.utils['chat-log']) console.log(entry.trim());
+  try { fs.appendFileSync('pulse-artifacts.log', entry); } catch {}
 }
 
 process.on('uncaughtException', (err) => {
@@ -83,12 +109,11 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  logArtifact('Unhandled Rejection', reason.stack || reason);
+  logArtifact('Unhandled Rejection', reason?.stack || reason);
   process.exit(1);
 });
 
-// -------------- Bot Factory ----------------
-
+// ---------------- Bot Factory ----------------
 function createBot() {
   resurrectionCount++;
   botStatus.resurrection = resurrectionCount;
@@ -174,74 +199,95 @@ function createBot() {
     bot.pathfinder.setMovements(defaultMove);
     bot.pathfinder.setGoal(new GoalBlock(tx, ty, tz), true);
     logArtifact('Drift Target', `(${tx}, ${ty}, ${tz})`);
-
     setTimeout(continuousDrift, Math.random() * 4000 + 3000);
   }
 
   function simulateHumanPresence() {
-    bot.setControlState('jump', true);
-    setTimeout(() => bot.setControlState('jump', false), 500);
-    const yaw = Math.random() * Math.PI * 2;
-    const pitch = (Math.random() - 0.5) * Math.PI;
-    bot.look(yaw, pitch, true).catch(() => {});
+    try {
+      bot.setControlState('jump', true);
+      setTimeout(() => bot.setControlState('jump', false), 500);
+      const yaw = Math.random() * Math.PI * 2;
+      const pitch = (Math.random() - 0.5) * Math.PI;
+      bot.look(yaw, pitch, true).catch(() => {});
+    } catch {}
     setTimeout(simulateHumanPresence, Math.random() * 20000 + 10000);
   }
 
   function mimicChat() {
-    const messages = [
-      'Just vibing 🌿',
-      'Exploring the terrain...',
-      'Anyone online?',
-      'Still active 👀',
-      'Pulse Guardian reporting in.',
-      'What’s up?',
-      'Need anything?',
-      'Lag spike? Or just me?',
-      'I love this biome.',
-      'Crafting something cool soon.'
-    ];
+    if (!config.utils['chat-messages'].enabled) return;
     try {
-      const msg = messages[Math.floor(Math.random() * messages.length)];
+      const msgs = config.utils['chat-messages'].messages;
+      const msg = msgs[Math.floor(Math.random() * msgs.length)];
       bot.chat(msg);
     } catch (err) {
       logArtifact('Chat Error', err.message);
     }
-    setTimeout(mimicChat, Math.random() * 45000 + 30000);
+    const delayMs = (config.utils['chat-messages']['repeat-delay'] || 60) * 1000;
+    setTimeout(mimicChat, Math.random() * delayMs + delayMs);
   }
 
   function fleeFromHostiles() {
-    const hostiles = Object.values(bot.entities).filter(e => 
-      e.type === 'mob' &&
-      ['Zombie','Skeleton','Creeper','Spider','Enderman'].includes(e.mobType) &&
-      bot.entity.position.distanceTo(e.position) < 10
-    );
-    if (hostiles.length) {
-      const threat = hostiles[0];
-      const dx = bot.entity.position.x - threat.position.x;
-      const dz = bot.entity.position.z - threat.position.z;
-      const fx = Math.floor(bot.entity.position.x + dx * 2);
-      const fy = Math.floor(bot.entity.position.y);
-      const fz = Math.floor(bot.entity.position.z + dz * 2);
+    try {
+      const hostiles = Object.values(bot.entities).filter(e =>
+        e.type === 'mob' &&
+        ['Zombie','Skeleton','Creeper','Spider','Enderman'].includes(e.mobType) &&
+        bot.entity.position.distanceTo(e.position) < 10
+      );
+      if (hostiles.length) {
+        const threat = hostiles[0];
+        const dx = bot.entity.position.x - threat.position.x;
+        const dz = bot.entity.position.z - threat.position.z;
+        const fx = Math.floor(bot.entity.position.x + dx * 2);
+        const fy = Math.floor(bot.entity.position.y);
+        const fz = Math.floor(bot.entity.position.z + dz * 2);
 
-      bot.pathfinder.setMovements(defaultMove);
-      bot.pathfinder.setGoal(new GoalBlock(fx, fy, fz), true);
-      logArtifact('Flee', `${threat.mobType} → (${fx}, ${fy}, ${fz})`);
-    }
+        bot.pathfinder.setMovements(defaultMove);
+        bot.pathfinder.setGoal(new GoalBlock(fx, fy, fz), true);
+        logArtifact('Flee', `${threat.mobType} → (${fx}, ${fy}, ${fz})`);
+      }
+    } catch {}
     setTimeout(fleeFromHostiles, 3000);
   }
 
+  // Positioning (optional)
+  bot.once('spawn', () => {
+    try {
+      if (config.position.enabled) {
+        const { x, y, z } = config.position;
+        bot.pathfinder.setMovements(defaultMove);
+        bot.pathfinder.setGoal(new GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z)), true);
+        logArtifact('Position Init', `Targeting (${x}, ${y}, ${z})`);
+      }
+    } catch {}
+  });
+
+  // Anti-AFK loop
+  function antiAfkLoop() {
+    if (!config.utils['anti-afk'].enabled) return;
+    try {
+      bot.setControlState('sneak', true);
+      setTimeout(() => bot.setControlState('sneak', false), 1000);
+      bot.setControlState('jump', true);
+      setTimeout(() => bot.setControlState('jump', false), 300);
+      const yaw = Math.random() * Math.PI * 2;
+      const pitch = (Math.random() - 0.5) * Math.PI;
+      bot.look(yaw, pitch, true).catch(() => {});
+    } catch {}
+    setTimeout(antiAfkLoop, Math.random() * 15000 + 10000);
+  }
+
   // Ghostproof detection
-  setInterval(() => {
+  const ghostproofInterval = setInterval(() => {
     if (Date.now() - lastRealActivity > 60000) {
       logArtifact('Ghostproof Trigger', `v5.3.${resurrectionCount} – No activity detected`);
       botStatus.online = false;
       botStatus.statusText = `Pulse Guardian v5.3.${resurrectionCount} ghostproof ❌`;
+      try { clearInterval(ghostproofInterval); } catch {}
       process.exit(1);
     }
   }, 30000);
 
   // -------------- Event Hooks ----------------
-
   bot.once('spawn', () => {
     botStatus = {
       ...botStatus,
@@ -264,7 +310,8 @@ function createBot() {
 
     continuousDrift();
     simulateHumanPresence();
-    mimicChat();
+    antiAfkLoop();
+    if (config.utils['chat-messages'].enabled) mimicChat();
     fleeFromHostiles();
 
     setInterval(() => {
@@ -283,7 +330,6 @@ function createBot() {
     botStatus.lastSeen = new Date().toISOString();
     botStatus.statusText = `Pulse Guardian v5.3.${resurrectionCount} disconnected ❌`;
 
-    // Dynamic backoff on internal reconnects
     const now = Date.now();
     let delay = baseReconnectDelay;
     if (lastDisconnectTime && now - lastDisconnectTime < 60000) {
