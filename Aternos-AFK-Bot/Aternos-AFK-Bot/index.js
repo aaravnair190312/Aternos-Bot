@@ -11,7 +11,7 @@ const mcData    = require('minecraft-data');
 const express   = require('express');
 const fs        = require('fs');
 
-// ---------------- Env-only Config (no auto-auth) ----------------
+// ---------------- Env-only Config (auto-auth removed) ----------------
 const config = {
   "bot-account": {
     username: process.env.BOT_USER,
@@ -234,30 +234,45 @@ function createBot() {
     setTimeout(mimicChat, Math.random()*delayMs + delayMs);
   }
 
+  // Throttle flag to prevent re-entrancy
+  let fleeingBusy = false;
+
   function fleeFromHostiles() {
+    if (fleeingBusy) return;
+    fleeingBusy = true;
+
     try {
-      const threats = Object.values(bot.entities).filter(e => {
-        if (!e?.position) return false;
-        const type = getMobType(e);
-        return isHostile(type) &&
-               bot.entity.position.distanceTo(e.position) < 10;
-      });
+      const me = bot.entity?.position;
+      if (!me) {
+        return;
+      }
+
+      const threats = Object.values(bot.entities)
+        .filter(e => {
+          if (!e?.position) return false;
+          const type = getMobType(e);
+          return isHostile(type) && me.distanceTo(e.position) < 10;
+        });
+
       if (threats.length) {
-        const threat = threats[0];
-        const { x,y,z } = bot.entity.position;
-        const dx = x - threat.position.x;
-        const dz = z - threat.position.z;
-        const fx = Math.floor(x + dx * 2);
-        const fy = Math.floor(y);
-        const fz = Math.floor(z + dz * 2);
+        const t = threats[0];
+        const dx = me.x - t.position.x;
+        const dz = me.z - t.position.z;
+        const fx = Math.floor(me.x + dx * 2);
+        const fy = Math.floor(me.y);
+        const fz = Math.floor(me.z + dz * 2);
+
         bot.pathfinder.setMovements(defaultMove);
         bot.pathfinder.setGoal(new GoalBlock(fx, fy, fz), true);
-        logArtifact('Flee', `${getMobType(threat)} → (${fx}, ${fy}, ${fz})`);
+
+        logArtifact('Flee', `${getMobType(t)} → (${fx}, ${fy}, ${fz})`);
       }
     } catch (err) {
-      logArtifact('Flee Error', err.message);
+      logArtifact('Flee Error', err.stack || err.message);
+    } finally {
+      fleeingBusy = false;
+      setTimeout(fleeFromHostiles, 3000);
     }
-    setTimeout(fleeFromHostiles, 3000);
   }
 
   // ---------------- Event Hooks ----------------
