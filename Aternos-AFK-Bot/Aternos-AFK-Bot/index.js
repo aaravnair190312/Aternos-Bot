@@ -1,4 +1,4 @@
-// index.js — Pulse Guardian v6.6 Continuous Random Movement + Head Rotation
+// index.js — Pulse Guardian v6.7 Continuous Random Movement + Head Rotation
 
 require('events').defaultMaxListeners = 30;
 
@@ -8,7 +8,6 @@ const mcData = require('minecraft-data');
 const express = require('express');
 const fs = require('fs');
 
-// ---------------- Env Config ----------------
 const config = {
   "bot-account": {
     username: process.env.BOT_USER,
@@ -21,7 +20,6 @@ const config = {
     version: process.env.MC_VERSION
   },
   utils: {
-    "anti-afk": process.env.ANTI_AFK === "true",
     "chat-messages": {
       enabled: process.env.CHAT_MESSAGES === "true",
       "repeat-delay": parseInt(process.env.CHAT_REPEAT_DELAY || "60", 10),
@@ -34,7 +32,6 @@ const config = {
   }
 };
 
-// ---------------- Express Heartbeat ----------------
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -59,7 +56,6 @@ app.get(config.utils["status-endpoint"], (req,res) => res.json(botStatus));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`📡 Uptime monitor listening on port ${PORT}`));
 
-// ---------------- Artifact Logger ----------------
 function logArtifact(event, detail) {
   const timestamp = new Date().toISOString();
   const entry = `[Pulse Guardian Artifact] ${timestamp} – ${event}: ${detail}\n`;
@@ -67,7 +63,6 @@ function logArtifact(event, detail) {
   try { fs.appendFileSync('pulse-artifacts.log', entry); } catch {}
 }
 
-// ---------------- Bot Factory ----------------
 function createBot() {
   resurrectionCount++;
   botStatus.resurrection = resurrectionCount;
@@ -86,12 +81,11 @@ function createBot() {
   const mcVersion = mcData(bot.version);
   const defaultMove = new Movements(bot, mcVersion);
 
-  // Continuous random movement + head rotation
   function wander() {
     if (!bot.entity.position) return;
     const base = bot.entity.position;
-    const dx = (Math.random() - 0.5) * 10;
-    const dz = (Math.random() - 0.5) * 10;
+    const dx = (Math.random() - 0.5) * 8;
+    const dz = (Math.random() - 0.5) * 8;
     const x = Math.floor(base.x + dx);
     const y = Math.floor(base.y);
     const z = Math.floor(base.z + dz);
@@ -103,12 +97,11 @@ function createBot() {
     const pitch = (Math.random() - 0.5) * 0.5;
     bot.look(yaw, pitch, true).catch(() => {});
 
-    logArtifact('Wander', `Moving to (${x},${y},${z}) with head yaw=${yaw.toFixed(2)}, pitch=${pitch.toFixed(2)}`);
+    logArtifact('Wander', `Moving to (${x},${y},${z}) yaw=${yaw.toFixed(2)} pitch=${pitch.toFixed(2)}`);
 
-    setTimeout(wander, 15000 + Math.random()*10000);
+    setTimeout(wander, 10000 + Math.random()*10000);
   }
 
-  // Chat mimic
   function mimicChat() {
     if (!config.utils['chat-messages'].enabled) return;
     try {
@@ -172,10 +165,8 @@ function createBot() {
   });
 }
 
-// ---------------- Kick off ----------------
 createBot();
 
-// ---------------- Global Error Guards ----------------
 process.on('uncaughtException', err => {
   logArtifact('Uncaught Exception', err.stack || err.message);
   setTimeout(createBot, baseReconnectDelay);
