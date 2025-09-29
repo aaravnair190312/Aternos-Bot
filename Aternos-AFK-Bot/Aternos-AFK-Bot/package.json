@@ -13,6 +13,10 @@
     "mineflayer": "^4.15.0",
     "mineflayer-pathfinder": "^2.4.1",
     "minecraft-data": "^3.30.0"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
+
 
