@@ -2,7 +2,7 @@
   "bot-account": {
     "username": "AFKBot",
     "password": "",
-    "type": "offline"
+    "type": "mojang"
   },
 
   "server": {
