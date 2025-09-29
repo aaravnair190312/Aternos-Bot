@@ -15,9 +15,10 @@
     "minecraft-data": "^3.30.0"
   },
   "engines": {
-    "node": "18.x"
+    "node": "20.x"
   }
 }
+
 
 
 
