@@ -1,10 +1,9 @@
 
-// index.js — Pulse Guardian v6.x Render Resilience
 
 require('events').defaultMaxListeners = 30;
 
 const mineflayer = require('mineflayer');
-const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const { pathfinder, Movements } = require('mineflayer-pathfinder');
 const mcData = require('minecraft-data');
 const express = require('express');
 const fs = require('fs');
@@ -14,11 +13,11 @@ const config = {
   "bot-account": {
     username: process.env.BOT_USER,
     password: process.env.BOT_PASS || "",
-    type: process.env.BOT_AUTH || "offline" // "offline" for Aternos cracked, "microsoft" for premium
+    type: process.env.BOT_AUTH || "offline" // "offline" for cracked, "mojang"/"microsoft" for premium
   },
   server: {
-    ip: process.env.MC_HOST,
-    port: parseInt(process.env.MC_PORT, 10),
+    ip: process.env.MC_HOST || "localhost",
+    port: parseInt(process.env.MC_PORT || "25565", 10),
     version: process.env.MC_VERSION
   },
   utils: {
@@ -32,7 +31,11 @@ const config = {
     "chat-log": process.env.CHAT_LOG !== "false",
     "auto-reconnect": process.env.AUTO_RECONNECT !== "false",
     "auto-reconnect-delay": parseInt(process.env.RECONNECT_DELAY || "10000", 10),
-    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json"
+    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json",
+    "pos-enabled": process.env.POS_ENABLED === "true",
+    "pos-x": parseFloat(process.env.POS_X || "0"),
+    "pos-y": parseFloat(process.env.POS_Y || "0"),
+    "pos-z": parseFloat(process.env.POS_Z || "0")
   }
 };
 
@@ -140,6 +143,17 @@ function createBot() {
     };
     simulateHumanPresence();
     if (config.utils['chat-messages'].enabled) mimicChat();
+
+    if (config.utils["pos-enabled"]) {
+      const goal = new mineflayer.pathfinder.goals.GoalBlock(
+        config.utils["pos-x"],
+        config.utils["pos-y"],
+        config.utils["pos-z"]
+      );
+      bot.pathfinder.setMovements(defaultMove);
+      bot.pathfinder.setGoal(goal);
+    }
+
     setInterval(() => {
       botStatus.lastSeen = new Date().toISOString();
       botStatus.position = bot.entity.position;
@@ -159,6 +173,7 @@ function createBot() {
     }
     lastDisconnectTime = now;
     const jitter = Math.floor(Math.random() * 5000);
+    logArtifact('Reconnect', `Respawning in ${delay + jitter}ms`);
     setTimeout(createBot, delay + jitter);
   });
 
@@ -172,6 +187,7 @@ function createBot() {
     logArtifact('Error', err.stack || err.message);
     botStatus.online = false;
     botStatus.statusText = `Pulse Guardian v6.${resurrectionCount} error ❌`;
+    setTimeout(createBot, baseReconnectDelay);
   });
 }
 
@@ -188,3 +204,5 @@ process.on('unhandledRejection', reason => {
   logArtifact('Unhandled Rejection', reason?.stack || reason);
   setTimeout(createBot, baseReconnectDelay);
 });
+
+
