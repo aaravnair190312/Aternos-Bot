@@ -1,4 +1,4 @@
-// index.js — Pulse Guardian v6.7.4 “The Sleepproof Sentinel”
+// index.js — Pulse Guardian v6.7.5 “The Sleepproof Sentinel”
 
 require('events').defaultMaxListeners = 30;
 
@@ -43,6 +43,7 @@ function logArtifact(event, detail) {
   try { fs.appendFileSync('pulse-artifacts.log', entry); } catch {}
 }
 
+// === WakeGuard: detects Render sleep and retries ===
 async function wakeGuard(url) {
   try {
     const res = await fetch(url);
@@ -87,7 +88,7 @@ function createBot() {
   const mcVersion = mcData(bot.version);
   const defaultMove = new Movements(bot, mcVersion);
 
-  // === Patched Wander with online guard ===
+  // === Patched Wander with online + path check ===
   function wander() {
     if (!bot.player || !bot.entity?.position || !botStatus.online) {
       logArtifact('Wander Skip', 'Server offline or bot not spawned, skipping wander()');
@@ -101,14 +102,14 @@ function createBot() {
     const y = Math.floor(base.y);
     const z = Math.floor(base.z + dz);
 
-    bot.pathfinder.setMovements(defaultMove);
-    bot.pathfinder.setGoal(new GoalNear(x, y, z, 1));
-
-    const yaw = Math.random() * Math.PI * 2;
-    const pitch = (Math.random() - 0.5) * 0.5;
-    bot.look(yaw, pitch, true).catch(() => {});
-
-    logArtifact('Wander', `Moving to (${x},${y},${z}) yaw=${yaw.toFixed(2)} pitch=${pitch.toFixed(2)}`);
+    try {
+      bot.pathfinder.setMovements(defaultMove);
+      bot.pathfinder.setGoal(new GoalNear(x, y, z, 1));
+      logArtifact('Wander', `Path set to (${x},${y},${z})`);
+    } catch (err) {
+      logArtifact('Wander Error', err.message);
+      return;
+    }
 
     setTimeout(wander, 10000 + Math.random()*10000);
   }
@@ -217,5 +218,6 @@ process.on('unhandledRejection', reason => {
   logArtifact('Unhandled Rejection', reason?.stack || reason);
   if (config.utils["auto-reconnect"]) safeReconnect();
 });
+
 
 
