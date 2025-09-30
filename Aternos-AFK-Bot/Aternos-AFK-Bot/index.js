@@ -1,4 +1,4 @@
-// index.js — Pulse Guardian v6.7.5 “The Sleepproof Sentinel”
+// index.js — Pulse Guardian v6.7.6 “The Sleepproof Sentinel”
 
 require('events').defaultMaxListeners = 30;
 
@@ -88,7 +88,7 @@ function createBot() {
   const mcVersion = mcData(bot.version);
   const defaultMove = new Movements(bot, mcVersion);
 
-  // === Patched Wander with online + path check ===
+  // === Wander with guards ===
   function wander() {
     if (!bot.player || !bot.entity?.position || !botStatus.online) {
       logArtifact('Wander Skip', 'Server offline or bot not spawned, skipping wander()');
@@ -144,6 +144,7 @@ function createBot() {
 
   bot.on('goal_reached', () => logArtifact('Pathfinder', 'Goal reached'));
   bot.on('path_update', (r) => {
+    logArtifact('Pathfinder Update', `Status=${r.status}, Nodes=${r.path.length}`);
     if (r.status === 'noPath') {
       logArtifact('Pathfinder', 'No path, retrying wander()');
       wander();
@@ -159,7 +160,17 @@ function createBot() {
       version: bot.version,
       statusText: `Pulse Guardian v6.${resurrectionCount} active ✅`
     };
-    wander();
+
+    // Movement sanity test
+    setTimeout(() => {
+      bot.chat("Testing forward movement...");
+      bot.setControlState('forward', true);
+      setTimeout(() => {
+        bot.setControlState('forward', false);
+        wander(); // start wander after test
+      }, 3000);
+    }, 5000);
+
     if (config.utils['chat-messages'].enabled) mimicChat();
     setInterval(() => {
       botStatus.lastSeen = new Date().toISOString();
@@ -218,6 +229,7 @@ process.on('unhandledRejection', reason => {
   logArtifact('Unhandled Rejection', reason?.stack || reason);
   if (config.utils["auto-reconnect"]) safeReconnect();
 });
+
 
 
 
