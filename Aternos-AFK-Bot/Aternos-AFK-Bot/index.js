@@ -1,4 +1,4 @@
-// index.js — Pulse Guardian v6.7.3 “The Sleepproof Sentinel”
+// index.js — Pulse Guardian v6.7.4 “The Sleepproof Sentinel”
 
 require('events').defaultMaxListeners = 30;
 
@@ -7,31 +7,9 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const mcData = require('minecraft-data');
 const express = require('express');
 const fs = require('fs');
-const fetch = require('node-fetch'); // Added for WakeGuard + PulseLoop
+const fetch = require('node-fetch');
 
-const config = {
-  "bot-account": {
-    username: process.env.BOT_USER,
-    password: process.env.BOT_PASS || "",
-    type: process.env.BOT_AUTH || "offline"
-  },
-  server: {
-    ip: process.env.MC_HOST || "localhost",
-    port: parseInt(process.env.MC_PORT || "25565", 10),
-    version: process.env.MC_VERSION
-  },
-  utils: {
-    "chat-messages": {
-      enabled: process.env.CHAT_MESSAGES === "true",
-      "repeat-delay": parseInt(process.env.CHAT_REPEAT_DELAY || "60", 10),
-      messages: (process.env.CHAT_MESSAGES_LIST || "").split(",").map(s => s.trim()).filter(Boolean)
-    },
-    "chat-log": process.env.CHAT_LOG !== "false",
-    "auto-reconnect": process.env.AUTO_RECONNECT !== "false",
-    "auto-reconnect-delay": parseInt(process.env.RECONNECT_DELAY || "10000", 10),
-    "status-endpoint": process.env.STATUS_ENDPOINT || "/status.json"
-  }
-};
+const config = require('./settings.json');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -39,7 +17,7 @@ const PORT = process.env.PORT || 5000;
 let resurrectionCount = 0;
 let lastReconnect = 0;
 const baseReconnectDelay = config.utils["auto-reconnect-delay"];
-const MIN_RECONNECT_DELAY = 30000; // 30s cooldown
+const MIN_RECONNECT_DELAY = 30000;
 
 let botStatus = {
   online: false,
@@ -65,13 +43,12 @@ function logArtifact(event, detail) {
   try { fs.appendFileSync('pulse-artifacts.log', entry); } catch {}
 }
 
-// === WakeGuard: detects Render sleep and retries ===
 async function wakeGuard(url) {
   try {
     const res = await fetch(url);
     if (res.status === 503 || res.status === 502) {
       logArtifact('WakeGuard', 'Render waking up… retrying in 15s');
-      await new Promise(r => setTimeout(r, 15000));
+      await new Promise(r => setTimeout(r, config.utils["wake-guard"]?.["retry-delay"] || 15000));
       return await fetch(url);
     }
     return res;
@@ -110,8 +87,13 @@ function createBot() {
   const mcVersion = mcData(bot.version);
   const defaultMove = new Movements(bot, mcVersion);
 
+  // === Patched Wander with online guard ===
   function wander() {
-    if (!bot.entity?.position) return;
+    if (!bot.player || !bot.entity?.position || !botStatus.online) {
+      logArtifact('Wander Skip', 'Server offline or bot not spawned, skipping wander()');
+      return;
+    }
+
     const base = bot.entity.position;
     const dx = (Math.random() - 0.5) * 8;
     const dz = (Math.random() - 0.5) * 8;
@@ -150,7 +132,7 @@ function createBot() {
   // === Hardened Guards ===
   let lastPos = null;
   setInterval(() => {
-    if (!bot.entity?.position) return;
+    if (!bot.entity?.position || !botStatus.online) return;
     const pos = bot.entity.position;
     if (lastPos && pos.distanceTo(lastPos) < 1) {
       logArtifact('Watchdog', 'Bot stuck, forcing wander() restart');
@@ -183,17 +165,18 @@ function createBot() {
       botStatus.position = bot.entity.position;
     }, 30000);
 
-    // === PulseLoop: self-ping to keep Render warm ===
-    setInterval(async () => {
-      try {
-        const res = await wakeGuard(`http://localhost:${PORT}/heartbeat`);
-        if (res) {
-          logArtifact('PulseLoop', `Self-ping → ${res.status}`);
+    if (config.utils["pulse-loop"]?.enabled) {
+      setInterval(async () => {
+        try {
+          const res = await wakeGuard(`http://localhost:${PORT}/heartbeat`);
+          if (res) {
+            logArtifact('PulseLoop', `Self-ping → ${res.status}`);
+          }
+        } catch (err) {
+          logArtifact('PulseLoop Error', err.message);
         }
-      } catch (err) {
-        logArtifact('PulseLoop Error', err.message);
-      }
-    }, 120000); // every 2 minutes
+      }, config.utils["pulse-loop"].interval || 120000);
+    }
   });
 
   bot.on('respawn', () => {
@@ -231,5 +214,8 @@ process.on('uncaughtException', err => {
 });
 
 process.on('unhandledRejection', reason => {
-  logArtifact
+  logArtifact('Unhandled Rejection', reason?.stack || reason);
+  if (config.utils["auto-reconnect"]) safeReconnect();
+});
+
 
