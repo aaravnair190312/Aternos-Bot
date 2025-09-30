@@ -50,7 +50,18 @@
     "chat-log": true,
     "auto-reconnect": true,
     "auto-reconnect-delay": 5000,
-    "status-endpoint": "/status.json"
+    "status-endpoint": "/status.json",
+
+    "wake-guard": {
+      "enabled": true,
+      "retry-delay": 15000
+    },
+
+    "pulse-loop": {
+      "enabled": true,
+      "interval": 120000
+    }
   }
 }
+
 
